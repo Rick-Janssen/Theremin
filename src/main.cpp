@@ -1,38 +1,61 @@
 #include <Arduino.h>
+#include <stdlib.h>
+#include "ultrasoon.h"
+#include "potmeter.h"
 
-#define TOON_HZ 1000UL                 // toonhoogte in Hz
+#define BUF_LEN       8
+#define TOON_MIN_HZ   230UL
+#define TOON_MAX_HZ   1400UL
 
-void setup() {
-  DDRD |= (1 << DDD3);                 // pin 3 als uitgang
+typedef uint16_t (*omreken_fn)(uint16_t);
 
-  // Timer2: fast PWM, 62,5 kHz (volume)
+static uint16_t naar_cm(uint16_t ticks) { return ((uint32_t)ticks * TICK_US) / US_PER_CM; }
+static uint16_t naar_us(uint16_t ticks) { return ticks * TICK_US; }
+
+static uint16_t  *metingen = NULL;
+static omreken_fn omreken  = naar_cm;
+static uint8_t    positie  = 0;
+
+// Elke halve periode van de toon: PWM aan/uit wisselen
+ISR(TIMER0_COMPA_vect)
+{
+  TCCR2A ^= (1 << COM2B1);
+  if (!(TCCR2A & (1 << COM2B1))) PORTD &= ~(1 << PORTD3);
+}
+
+void setup()
+{
+  ultrasoon_init();
+  potmeter_init();
+
+  DDRD |= (1 << DDD3);                          // pin 3 = buzzer
+
+  // Timer2: fast PWM 62,5 kHz, OCR2B = volume
   TCCR2A = (1 << COM2B1) | (1 << WGM21) | (1 << WGM20);
-  TCCR2B = (1 << CS20);                // geen prescaler
-  OCR2B = 0;                           // pulsbreedte
+  TCCR2B = (1 << CS20);
 
-  // Timer0: CTC, bepaalt de toon
+  // Timer0: CTC, prescaler 256, bepaalt de toon
   TCCR0A = (1 << WGM01);
-  TCCR0B = (1 << CS02);                // prescaler 256
-  OCR0A = (62500UL / (2UL * TOON_HZ)) - 1;   // halve periode in ticks
-  TIMSK0 = (1 << OCIE0A);              // interrupt aan
+  TCCR0B = (1 << CS02);
+  OCR0A  = 134;                                 // start op 230 Hz
+  TIMSK0 = (1 << OCIE0A);
 
-  // ADC: potmeter op A0
-  ADMUX = (1 << REFS0);                // referentie AVcc, kanaal 0
-  ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);  // ADC aan, prescaler 128
-  DIDR0 = (1 << ADC0D);                // digitale buffer A0 uit
+  metingen = (uint16_t *)calloc(BUF_LEN, sizeof(uint16_t));   // calloc zet alles op 0
+  if (metingen == NULL) while (1);              // geen geheugen: stop veilig
 }
 
-// Elke halve periode van de toon
-ISR(TIMER0_COMPA_vect) {
-  TCCR2A ^= (1 << COM2B1);             // PWM aan/uit wisselen
+void loop()
+{
+  OCR2B = potmeter_lees() >> 2;                 // potmeter = volume (0..255)
 
-  if (!(TCCR2A & (1 << COM2B1))) {     // PWM uit?
-    PORTD &= ~(1 << PORTD3);           // pin 3 laag
+  if (ultrasoon_nieuw()) {
+    uint16_t ticks = ultrasoon_lees();
+    if (ticks > ECHO_MAX_TICKS) ticks = ECHO_MAX_TICKS;
+
+    uint16_t hz = TOON_MAX_HZ - ((uint32_t)ticks * (TOON_MAX_HZ - TOON_MIN_HZ)) / ECHO_MAX_TICKS;
+    OCR0A = 31250UL / hz - 1;                   // toonhoogte uit de afstand
+
+    metingen[positie] = omreken(ticks);
+    positie = (positie + 1) % BUF_LEN;
   }
-}
-
-void loop() {
-  ADCSRA |= (1 << ADSC);               // start conversie
-  while (ADCSRA & (1 << ADSC));        // wacht tot klaar
-  OCR2B = ADC >> 2;                    // potmeter (0..1023) naar volume (0..255)
 }

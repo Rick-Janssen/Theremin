@@ -3,8 +3,13 @@
 
 #include <stdint.h>
 
+#define TICK_US         4     // 1 timertick = 4 us
+#define US_PER_CM       58
+#define MAX_AFSTAND_CM  120
+#define ECHO_MAX_TICKS  ((MAX_AFSTAND_CM * US_PER_CM) / TICK_US)   
+
 void     ultrasoon_init(void);
-uint8_t  ultrasoon_nieuw(void);     // 1 als er een nieuwe meting is
-uint16_t ultrasoon_lees(void);      // echobreedte in ticks van 4 us
+uint8_t  ultrasoon_nieuw(void);
+uint16_t ultrasoon_lees(void);   
 
 #endif
