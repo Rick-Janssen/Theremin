@@ -30,12 +30,12 @@ void ultrasoon_init(void)
   TIMSK1 = (1 << ICIE1); // interrupt bij input capture (falling edge van echo)
 }
 
-uint8_t ultrasoon_nieuwe_meting_beschikbaar(void)
+uint8_t ultrasoon_nieuwe_meting(void)
 {
   return nieuwe_meting;
 }
 
-uint16_t ultrasoon_lees_afstand_mm(void)
+uint16_t ultrasoon_lees_afstand(void)
 {
   uint8_t sreg = SREG;
   cli();                          // echo_tijd is 16 bit: niet laten onderbreken
