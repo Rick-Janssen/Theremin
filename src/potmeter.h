@@ -4,6 +4,6 @@
 #include <stdint.h>
 
 void     potmeter_init(void);
-uint16_t potmeter_lees(void);
+uint8_t    potmeter_lees_volume(void);
 
 #endif
