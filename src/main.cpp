@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "ultrasoon.h"
 #include "potmeter.h"
+#include "filter.h"
 
 #define TOON_MIN_HZ       230UL      // laagste toon in Hz 
 #define TOON_MAX_HZ       1400UL     // hoogste toon in Hz
@@ -39,16 +40,20 @@ void loop()
   OCR2B = potmeter_lees_volume();
 
   if (ultrasoon_nieuwe_meting()) {
+    // 1. waarde van de ultrasoon (mm) gaat in de lijst, de mediaan komt terug
     uint16_t afstand_mm = ultrasoon_lees_afstand();
 
+    // 2. mediaan begrenzen tot 20..650 mm
     if (afstand_mm > ULTRASOON_MAX_AFSTAND) afstand_mm = ULTRASOON_MAX_AFSTAND;
     if (afstand_mm < ULTRASOON_MIN_AFSTAND) afstand_mm = ULTRASOON_MIN_AFSTAND;
 
-    // dichtbij = hoge toon, ver weg = lage toon
+    // 3. de mediaan omrekenen naar hz
     uint16_t hz = TOON_MAX_HZ -
       ((uint32_t)(afstand_mm - ULTRASOON_MIN_AFSTAND) * (TOON_MAX_HZ - TOON_MIN_HZ))
       / (ULTRASOON_MAX_AFSTAND - ULTRASOON_MIN_AFSTAND);
 
-    OCR0A = TIMER0_KLOK_HZ / (2UL * hz) - 1;
+    // 4. die hz gaat naar de buzzer
+    uint16_t mediaan_hz = filter_verwerk(hz);
+    OCR0A = TIMER0_KLOK_HZ / (2UL * mediaan_hz) - 1;
   }
 }
