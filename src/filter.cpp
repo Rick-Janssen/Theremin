@@ -12,9 +12,10 @@ typedef struct {
 
 static toonhoogte    *buffer      = NULL;        
 static uint8_t           grootte     = 0; // actieve grootte (0 = nog niet gealloceerd)
-static volatile uint8_t  gewenst     = FILTER_MAX; // gewenste grootte, door ISR aangepast
+static uint8_t           gewenst     = FILTER_START; // gewenste grootte (aantal samples), door de knoppen aangepast
 static uint8_t           gevuld      = 0; // 0 = buffer nog niet gevuld met eerste waarde
-static volatile uint8_t  vorige_pind = 0;
+static uint8_t           vorige_pind = 0;
+static volatile uint8_t  knop_vlag   = 0; // door de ISR gezet, door filter_verwerk() verwerkt
 
 #define KNOP_MIN  (1 << PIND4)   // knop: filter kleiner
 #define KNOP_PLUS (1 << PIND5)   // knop: filter groter
@@ -64,17 +65,33 @@ void filter_init(void)
   PCICR  |= (1 << PCIE2);
   PCMSK2 |= (1 << PCINT20) | (1 << PCINT21);
 
-  // grootte blijft 0: het buffer wordt bij de eerste filter_verwerk() gealloceerd
 }
 
 uint8_t filter_grootte(void)
 {
-  return grootte;
+  return gewenst;
+}
+static void knoppen_verwerken(void)
+{
+  if (!knop_vlag) return;
+  knop_vlag = 0;
+
+  uint8_t nu = PIND & (KNOP_MIN | KNOP_PLUS);
+  uint8_t gedrukt = vorige_pind & ~nu;      // was hoog, nu laag
+  vorige_pind = nu;
+
+  if ((gedrukt & KNOP_MIN) && gewenst > FILTER_MIN) {
+    gewenst -= 2;
+  }
+  if ((gedrukt & KNOP_PLUS) && gewenst < FILTER_MAX) {
+    gewenst += 2;
+  }
 }
 
 uint16_t filter_verwerk(uint16_t waarde)
 {
-  // Nieuwe grootte overnemen (ISR past alleen 'gewenst' aan, zodat het buffer veilig blijft)
+  knoppen_verwerken();
+
   uint8_t nieuw = gewenst;
   if (nieuw != grootte) {
     if (!buffer_alloceren(nieuw)) {
@@ -111,17 +128,8 @@ uint16_t filter_verwerk(uint16_t waarde)
   return (buffer + grootte / 2)->value;
 }
 
-// Knoppen: reageer op neergaande flank (indrukken, pull-up)
+// Knoppen: de ISR zet alleen een vlag; filter_verwerk() leest de pinnen en past 'gewenst' aan
 ISR(PCINT2_vect)
 {
-  uint8_t nu = PIND & (KNOP_MIN | KNOP_PLUS);
-  uint8_t gedrukt = vorige_pind & ~nu;      // was hoog, nu laag
-  vorige_pind = nu;
-
-  if ((gedrukt & KNOP_MIN) && gewenst > FILTER_MIN) {
-    gewenst-= 2;
-  } 
-  if ((gedrukt & KNOP_PLUS) && gewenst < FILTER_MAX) {
-    gewenst+= 2;
-  }
+  knop_vlag = 1;
 }

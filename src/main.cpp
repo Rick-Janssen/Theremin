@@ -2,6 +2,7 @@
 #include "ultrasoon.h"
 #include "potmeter.h"
 #include "filter.h"
+#include "display.h"
 
 #define TOON_MIN_HZ       230UL      // laagste toon in Hz 
 #define TOON_MAX_HZ       1400UL     // hoogste toon in Hz
@@ -21,6 +22,8 @@ void setup()
 {
   ultrasoon_init();
   potmeter_init();
+  filter_init();    // knoppen (PD4/PD5) en filter klaarzetten
+  display_init();   // I2C-bus en 7-segmentendisplay klaarzetten
 
   DDRD |= (1 << DDD3); // PD3 (OC2B): buzzer
 
@@ -40,20 +43,23 @@ void loop()
   OCR2B = potmeter_lees_volume();
 
   if (ultrasoon_nieuwe_meting()) {
-    // 1. waarde van de ultrasoon (mm) gaat in de lijst, de mediaan komt terug
+    // 1. afstand van de ultrasoon in mm
     uint16_t afstand_mm = ultrasoon_lees_afstand();
 
-    // 2. mediaan begrenzen tot 20..650 mm
+    // 2. afstand begrenzen tot 20..650 mm
     if (afstand_mm > ULTRASOON_MAX_AFSTAND) afstand_mm = ULTRASOON_MAX_AFSTAND;
     if (afstand_mm < ULTRASOON_MIN_AFSTAND) afstand_mm = ULTRASOON_MIN_AFSTAND;
 
-    // 3. de mediaan omrekenen naar hz
+    // 3. afstand omrekenen naar hz (230..1400)
     uint16_t hz = TOON_MAX_HZ -
       ((uint32_t)(afstand_mm - ULTRASOON_MIN_AFSTAND) * (TOON_MAX_HZ - TOON_MIN_HZ))
       / (ULTRASOON_MAX_AFSTAND - ULTRASOON_MIN_AFSTAND);
 
-    // 4. die hz gaat naar de buzzer
+    // 4. hz gaat in de lijst, de mediaan komt terug en gaat naar de buzzer
     uint16_t mediaan_hz = filter_verwerk(hz);
-    OCR0A = TIMER0_KLOK_HZ / (2UL * mediaan_hz) - 1;
+    OCR0A = (TIMER0_KLOK_HZ / (2UL * mediaan_hz)) - 1;
   }
+
+  // Na filter_verwerk() is een wijziging van de knop verwerkt.
+  display_update(filter_grootte());
 }
